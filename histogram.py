@@ -37,6 +37,5 @@ def compute_statistics_and_generate_histograms(csv_path, output_dir):
 if __name__ == "__main__":
     image_name = "n01753488_177"
     csv_path = f"./output-{image_name}/features_with_gaussian_noise.csv"
-    output_dir = f"./output"
+    output_dir = f"./output-{image_name}"
     compute_statistics_and_generate_histograms(csv_path, output_dir)
-# -{image_name}
