@@ -54,7 +54,7 @@ def process_gaussian_noise(image_path, output_dir, imagenet_classes_path):
             for depth in range(layer_data.shape[1]):
                 feature_values = layer_data[0, depth].view(-1).numpy()
                 max_length = max(max_length, len(feature_values))
-                data[f"{layer_name}_depth{depth}_original"] = feature_values
+                data[f"{layer_name}_depth{depth}"] = feature_values
 
         for key, values in data.items():
             if len(values) < max_length:
