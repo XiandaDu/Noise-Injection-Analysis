@@ -58,12 +58,18 @@ def save_image_from_tensor(image_tensor, file_name):
     print(f"Image saved to {file_name}")
 
 
-def save_predictions_comparison_to_csv(original_preds, perturbed_preds, filename, imagenet_classes):
+def save_predictions_comparison_to_csv(original_preds, perturbed_preds_2, perturbed_preds_4, perturbed_preds_6, perturbed_preds_8, filename, imagenet_classes):
     data = {
         "Original Class": [imagenet_classes[idx] for idx in original_preds["indices"]],
         "Original Probability": [f"{prob:.4f}" for prob in original_preds["probabilities"]],
-        "Adversarial Class": [imagenet_classes[idx] for idx in perturbed_preds["indices"]],
-        "Adversarial Probability": [f"{prob:.4f}" for prob in perturbed_preds["probabilities"]],
+        "Adversarial Class ESP@2": [imagenet_classes[idx] for idx in perturbed_preds_2["indices"]],
+        "Adversarial Probability ESP@2": [f"{prob:.4f}" for prob in perturbed_preds_2["probabilities"]],
+        "Adversarial Class ESP@4": [imagenet_classes[idx] for idx in perturbed_preds_4["indices"]],
+        "Adversarial Probability ESP@4": [f"{prob:.4f}" for prob in perturbed_preds_4["probabilities"]],
+        "Adversarial Class ESP@6": [imagenet_classes[idx] for idx in perturbed_preds_6["indices"]],
+        "Adversarial Probability ESP@6": [f"{prob:.4f}" for prob in perturbed_preds_6["probabilities"]],
+        "Adversarial Class ESP@8": [imagenet_classes[idx] for idx in perturbed_preds_8["indices"]],
+        "Adversarial Probability ESP@8": [f"{prob:.4f}" for prob in perturbed_preds_8["probabilities"]],
     }
     pd.DataFrame(data).to_csv(filename, index=False)
     print(f"Prediction comparison saved to {filename}")
@@ -81,7 +87,7 @@ def get_top_predictions_with_labels(logits, top_k=10):
 model = models.resnet18(pretrained=True)
 model.eval()
 
-EPS_VAL = 8 / 255
+EPS_VAL = 2
 imagenet_path = "./Domain-Specific-Dataset/val"
 output_dir = "./fgsm_result"
 os.makedirs(output_dir, exist_ok=True)
@@ -97,7 +103,25 @@ transform = transforms.Compose([
 imagenet_val_dataset = ImageFolder(root=imagenet_path, transform=transform)
 dataloader = DataLoader(imagenet_val_dataset, batch_size=1, shuffle=True)
 
-attack = torchattacks.FGSM(model, eps=EPS_VAL)
+attack_2 = torchattacks.FGSM(model, eps=EPS_VAL/255)
+attack_2.normalization_used = True
+attack_2.set_normalization_used(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+EPS_VAL += 2
+
+attack_4 = torchattacks.FGSM(model, eps=EPS_VAL/255)
+attack_4.normalization_used = True
+attack_4.set_normalization_used(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+EPS_VAL += 2
+
+attack_6 = torchattacks.FGSM(model, eps=EPS_VAL/255)
+attack_6.normalization_used = True
+attack_6.set_normalization_used(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+EPS_VAL += 2
+
+attack_8 = torchattacks.FGSM(model, eps=EPS_VAL/255)
+attack_8.normalization_used = True
+attack_8.set_normalization_used(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+
 extractor = FeatureExtractor(model)
 extractor.register_hooks()
 
@@ -108,20 +132,38 @@ with open("imagenet_classes.txt", "r") as f:
 repeat = 5
 i = 0
 for i, (images, labels) in enumerate(tqdm(dataloader)):
-    adv_images = attack(images, labels)
+    adv_images_2 = attack_2(images, labels)
+    adv_images_4 = attack_4(images, labels)
+    adv_images_6 = attack_6(images, labels)
+    adv_images_8 = attack_8(images, labels)
 
     logits_original = model(images)
     original_predictions = get_top_predictions_with_labels(logits_original)
 
-    logits_adversarial = model(adv_images)
-    perturbed_predictions = get_top_predictions_with_labels(logits_adversarial)
+    logits_adversarial_2 = model(adv_images_2)
+    perturbed_predictions_2 = get_top_predictions_with_labels(logits_adversarial_2)
+
+    logits_adversarial_4 = model(adv_images_4)
+    perturbed_predictions_4 = get_top_predictions_with_labels(logits_adversarial_4)
+
+    logits_adversarial_6 = model(adv_images_6)
+    perturbed_predictions_6 = get_top_predictions_with_labels(logits_adversarial_6)
+
+    logits_adversarial_8 = model(adv_images_8)
+    perturbed_predictions_8 = get_top_predictions_with_labels(logits_adversarial_8)
 
     save_image_from_tensor(images, os.path.join(output_dir, f"original_{i + 1}.png"))
-    save_image_from_tensor(adv_images, os.path.join(output_dir, f"fgsm_{i + 1}.png"))
+    save_image_from_tensor(adv_images_2, os.path.join(output_dir, f"fgsm_{i + 1}_e2.png"))
+    save_image_from_tensor(adv_images_4, os.path.join(output_dir, f"fgsm_{i + 1}_e4.png"))
+    save_image_from_tensor(adv_images_6, os.path.join(output_dir, f"fgsm_{i + 1}_e6.png"))
+    save_image_from_tensor(adv_images_8, os.path.join(output_dir, f"fgsm_{i + 1}_e8.png"))
 
     save_predictions_comparison_to_csv(
         original_predictions,
-        perturbed_predictions,
+        perturbed_predictions_2,
+        perturbed_predictions_4,
+        perturbed_predictions_6,
+        perturbed_predictions_8,
         os.path.join(output_dir, f"predictions_{i + 1}.csv"),
         imagenet_classes
     )
@@ -131,8 +173,20 @@ for i, (images, labels) in enumerate(tqdm(dataloader)):
     save_feature_maps_to_csv(extractor.features, os.path.join(output_dir, f"original_features_{i + 1}.csv"))
 
     extractor.clear_features()
-    model(adv_images)
-    save_feature_maps_to_csv(extractor.features, os.path.join(output_dir, f"fgsm_features_{i + 1}.csv"))
+    model(adv_images_2)
+    save_feature_maps_to_csv(extractor.features, os.path.join(output_dir, f"fgsm_features_{i + 1}_e2.csv"))
+
+    extractor.clear_features()
+    model(adv_images_4)
+    save_feature_maps_to_csv(extractor.features, os.path.join(output_dir, f"fgsm_features_{i + 1}_e4.csv"))
+
+    extractor.clear_features()
+    model(adv_images_6)
+    save_feature_maps_to_csv(extractor.features, os.path.join(output_dir, f"fgsm_features_{i + 1}_e6.csv"))
+
+    extractor.clear_features()
+    model(adv_images_8)
+    save_feature_maps_to_csv(extractor.features, os.path.join(output_dir, f"fgsm_features_{i + 1}_e8.csv"))
 
     i = i+1
     if(i>repeat):
