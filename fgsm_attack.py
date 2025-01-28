@@ -132,6 +132,7 @@ with open("imagenet_classes.txt", "r") as f:
 repeat = 5
 i = 0
 for i, (images, labels) in enumerate(tqdm(dataloader)):
+    os.makedirs(f"./fgsm_result/image{i+1}", exist_ok=True)
     adv_images_2 = attack_2(images, labels)
     adv_images_4 = attack_4(images, labels)
     adv_images_6 = attack_6(images, labels)
@@ -152,11 +153,11 @@ for i, (images, labels) in enumerate(tqdm(dataloader)):
     logits_adversarial_8 = model(adv_images_8)
     perturbed_predictions_8 = get_top_predictions_with_labels(logits_adversarial_8)
 
-    save_image_from_tensor(images, os.path.join(output_dir, f"original_{i + 1}.png"))
-    save_image_from_tensor(adv_images_2, os.path.join(output_dir, f"fgsm_{i + 1}_e2.png"))
-    save_image_from_tensor(adv_images_4, os.path.join(output_dir, f"fgsm_{i + 1}_e4.png"))
-    save_image_from_tensor(adv_images_6, os.path.join(output_dir, f"fgsm_{i + 1}_e6.png"))
-    save_image_from_tensor(adv_images_8, os.path.join(output_dir, f"fgsm_{i + 1}_e8.png"))
+    save_image_from_tensor(images, os.path.join(output_dir+f"/image{i+1}", f"original_{i + 1}.png"))
+    save_image_from_tensor(adv_images_2, os.path.join(output_dir+f"/image{i+1}", f"fgsm_{i + 1}_e2.png"))
+    save_image_from_tensor(adv_images_4, os.path.join(output_dir+f"/image{i+1}", f"fgsm_{i + 1}_e4.png"))
+    save_image_from_tensor(adv_images_6, os.path.join(output_dir+f"/image{i+1}", f"fgsm_{i + 1}_e6.png"))
+    save_image_from_tensor(adv_images_8, os.path.join(output_dir+f"/image{i+1}", f"fgsm_{i + 1}_e8.png"))
 
     save_predictions_comparison_to_csv(
         original_predictions,
@@ -164,29 +165,29 @@ for i, (images, labels) in enumerate(tqdm(dataloader)):
         perturbed_predictions_4,
         perturbed_predictions_6,
         perturbed_predictions_8,
-        os.path.join(output_dir, f"predictions_{i + 1}.csv"),
+        os.path.join(output_dir+f"/image{i+1}", f"predictions_{i + 1}.csv"),
         imagenet_classes
     )
 
     extractor.clear_features()
     model(images)
-    save_feature_maps_to_csv(extractor.features, os.path.join(output_dir, f"original_features_{i + 1}.csv"))
+    save_feature_maps_to_csv(extractor.features, os.path.join(output_dir+f"/image{i+1}", f"original_features_{i + 1}.csv"))
 
     extractor.clear_features()
     model(adv_images_2)
-    save_feature_maps_to_csv(extractor.features, os.path.join(output_dir, f"fgsm_features_{i + 1}_e2.csv"))
+    save_feature_maps_to_csv(extractor.features, os.path.join(output_dir+f"/image{i+1}", f"fgsm_features_{i + 1}_e2.csv"))
 
     extractor.clear_features()
     model(adv_images_4)
-    save_feature_maps_to_csv(extractor.features, os.path.join(output_dir, f"fgsm_features_{i + 1}_e4.csv"))
+    save_feature_maps_to_csv(extractor.features, os.path.join(output_dir+f"/image{i+1}", f"fgsm_features_{i + 1}_e4.csv"))
 
     extractor.clear_features()
     model(adv_images_6)
-    save_feature_maps_to_csv(extractor.features, os.path.join(output_dir, f"fgsm_features_{i + 1}_e6.csv"))
+    save_feature_maps_to_csv(extractor.features, os.path.join(output_dir+f"/image{i+1}", f"fgsm_features_{i + 1}_e6.csv"))
 
     extractor.clear_features()
     model(adv_images_8)
-    save_feature_maps_to_csv(extractor.features, os.path.join(output_dir, f"fgsm_features_{i + 1}_e8.csv"))
+    save_feature_maps_to_csv(extractor.features, os.path.join(output_dir+f"/image{i+1}", f"fgsm_features_{i + 1}_e8.csv"))
 
     i = i+1
     if(i>repeat):

@@ -15,7 +15,7 @@ transform = transforms.Compose([
     )
 ])
 
-image_path = "../n02097474_520.JPEG"
+image_path = "../original_5.png"
 image = Image.open(image_path).convert("RGB")
 input_tensor = transform(image).unsqueeze(0)
 
