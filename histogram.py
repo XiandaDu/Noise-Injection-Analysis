@@ -36,17 +36,6 @@ def compute_statistics_and_generate_histograms(csv_path, output_dir, label):
     print(f"Statistics and histograms saved in {statistics_dir}")
 
 
-# if __name__ == "__main__":
-#     input_folder = Path(f"./fgsm_result/image2")
-
-#     for csv_file in input_folder.glob("or*.csv"):
-#         if(str(csv_file).split('\\')[-1].startswith("fgsm")):
-#             label = str(csv_file)[-6:-4]
-#         elif(str(csv_file).split('\\')[-1].startswith("original")):
-#             label = "original"
-
-#         output_dir = f"./fgsm_result/image2"
-#         compute_statistics_and_generate_histograms(csv_file, output_dir, label)
 
 if __name__ == "__main__":
     for image_name in range(1,7):
