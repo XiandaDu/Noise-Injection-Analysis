@@ -67,15 +67,6 @@ def process_csv_files(input_folder, output_folder):
 
 if __name__ == "__main__":
     for image_name in range(1,7):
-        input_folder = Path(f"./fgsm_result/image{image_name}-by-depth")
+        input_folder = Path(f"./fgsm_results/image{image_name}-by-depth")
         output_folder = input_folder / "diagram"
         process_csv_files(input_folder, output_folder)
-
-            # if(str(csv_file).split('\\')[-1].startswith("fgsm")):
-            #     label = str(csv_file)[-6:-4]
-            #     output_dir = f"./fgsm_result/image{image_name}-by-depth"
-
-            # elif(str(csv_file).split('\\')[-1].startswith("original")):
-            #     label = "original"
-            #     output_dir = f"./fgsm_result/image{image_name}-by-depth"
-            #     process_csv_files(csv_file, output_dir, label)

@@ -1,2 +1,16 @@
-*result/*
+*result
+*results
 *Dataset
+
+
+# FGSM
+# e1, e3
+# create a new statistics using L1 and L2 distances, remember to average them. 
+# from one layer to another layer.
+
+# Gaussian Noise as well ↑
+
+# PGD attack
+
+
+

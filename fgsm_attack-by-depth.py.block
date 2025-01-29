@@ -33,36 +33,7 @@ class FeatureExtractor:
         self.features.clear()
 
 
-def save_feature_maps_to_csv(features, filename):
-    data = {f"Layer_{i + 1}": feature_map.detach().cpu().numpy().flatten()
-            for i, feature_map in enumerate(features.values())}
 
-    max_length = max(len(v) for v in data.values())
-    for key, value in data.items():
-        if len(value) < max_length:
-            data[key] = list(value) + [float('nan')] * (max_length - len(value))
-
-    pd.DataFrame(data).to_csv(filename, index=False)
-    print(f"Saved: {filename}")
-
-def save_feature_maps_to_csv_by_depth(features, filename):
-    data = {}
-    max_length = 0
-
-    i = 1
-    for layer_name, layer_data in features.items():
-        for depth in range(layer_data.shape[1]):
-            feature_values = layer_data[0, depth].view(-1).detach().numpy()
-            max_length = max(max_length, len(feature_values))
-            data[f"Layer_{i}_depth{depth}"] = feature_values
-        i += 1
-
-    for key, value in data.items():
-        if len(value) < max_length:
-            data[key] = list(value) + [float('nan')] * (max_length - len(value))
-
-    pd.DataFrame(data).to_csv(filename, index=False)
-    print(f"Saved: {filename}")
 
 def save_image_from_tensor(image_tensor, file_name):
     unnormalize = transforms.Normalize(
@@ -132,45 +103,19 @@ with open("imagenet_classes.txt", "r") as f:
     imagenet_classes = [line.strip() for line in f]
 
 
-repeat = 5
+repeat = 10
 i = 0
 for i, (images, labels) in enumerate(tqdm(dataloader)):
-    os.makedirs(f"./fgsm_results/image{i+1}", exist_ok=True)
+    os.makedirs(f"./fgsm_results/image{i+1}-by-depth", exist_ok=True)
 
     adv_images = []
     for idx in range(0, ITERATION):
         adv_images.append(attack[idx](images, labels))
 
-    logits_original = model(images)
-    original_predictions = get_top_predictions_with_labels(logits_original)
-
-    logits_adversarial = []
-    perturbed_predictions = []
-    for idx in range(0, ITERATION):
-        logits_adversarial.append(model(adv_images[idx]))
-        perturbed_predictions.append(get_top_predictions_with_labels(logits_adversarial[idx]))
-
-    save_image_from_tensor(images, os.path.join(output_dir+f"/image{i+1}", f"original_{i + 1}.png"))
-    for idx in range(0, ITERATION):
-        save_image_from_tensor(adv_images[idx], os.path.join(output_dir+f"/image{i+1}", f"fgsm_{i + 1}_e{idx + 1}.png"))
-
-    save_predictions_comparison_to_csv(
-        original_predictions,
-        perturbed_predictions,
-        os.path.join(output_dir+f"/image{i+1}", f"predictions_{i + 1}.csv"),
-        imagenet_classes
-    )
-
     extractor.clear_features()
     model(images)
-    save_feature_maps_to_csv(extractor.features, os.path.join(output_dir+f"/image{i+1}", f"original_features_{i + 1}.csv"))
+    save_feature_maps_to_csv_by_depth(extractor.features, os.path.join(output_dir+f"/image{i+1}-by-depth", f"original_features_{i + 1}.csv"))
 
-    for idx in range(0, ITERATION):
-        extractor.clear_features()
-        model(adv_images[idx])
-        save_feature_maps_to_csv(extractor.features, os.path.join(output_dir+f"/image{i+1}", f"fgsm_features_{i + 1}_e{idx + 1}.csv"))
-
-    os.makedirs(f"./fgsm_results/image{i+1}-by-depth", exist_ok=True)
     for idx in range(0, ITERATION):
         extractor.clear_features()
         model(adv_images[idx])
