@@ -27,12 +27,12 @@ def compute_statistics_and_generate_histograms(csv_path, output_dir, label):
         plt.title(f"Histogram of {col}")
         plt.xlabel("Value")
         plt.ylabel("Frequency")
-        histogram_path = os.path.join(statistics_dir, f"{label}_{col}_histogram.png")
+        histogram_path = os.path.join(statistics_dir, f"{label}_{col}_diff_histogram.png")
         plt.savefig(histogram_path)
         plt.close()
 
     stats_df = pd.DataFrame(statistics).T
-    stats_csv_path = os.path.join(statistics_dir, f"{label}_statistics.csv")
+    stats_csv_path = os.path.join(statistics_dir, f"{label}_diff_statistics.csv")
     stats_df.to_csv(stats_csv_path)
     print(f"Statistics and histograms saved in {statistics_dir}")
 
@@ -71,6 +71,7 @@ if __name__ == "__main__":
                 output_path = statistics_dir+'/'+f"features-{image_name}-diff-org-{label}.csv"
                 diff(original_csv, mod_csv, output_path)
         
+        input_folder = Path(f"./fgsm_results/image{image_name}/statistics-by-diff")
         for csv_file in input_folder.glob("*.csv"):
-            label = csv_file.stem[-2:] if csv_file.stem.startswith("fgsm") else "original"
+            label = csv_file.stem[-6:] if csv_file.stem.startswith("features") else "original"
             compute_statistics_and_generate_histograms(csv_file, input_folder, label)
