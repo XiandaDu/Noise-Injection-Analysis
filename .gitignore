@@ -1,6 +1,9 @@
 *result
-*results
-*Dataset
+*results*
+*Dataset*
+diff
+all-concat
+histogram
 
 
 # FGSM
@@ -12,5 +15,6 @@
 
 # PGD attack
 
-
-
+# Concat statistics of pics together from multiple classes
+# Chi-Sqaure 
+# Original vs Pertubated distribution

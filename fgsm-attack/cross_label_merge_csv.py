@@ -7,7 +7,7 @@ def extract_number(folder_name):
     match = re.search(r'(\d+)', folder_name)
     return int(match.group(1)) if match else float('inf')
 
-def concat_all_labels(root_dir, output_dir):
+def concat_all_labels(root_dir, output_dir, i):
     # Global dictionary: category -> epsilon -> list of DataFrames
     global_data = {
         'image': {f'e{i}': [] for i in range(10)},
@@ -43,28 +43,27 @@ def concat_all_labels(root_dir, output_dir):
                 count = count_image
                 
             # Process CSV files for each epsilon e0-e9
-            for i in range(10):
-                if i == 0:
-                    csv_file = f'original_features_{count}_e0.csv'
-                else:
-                    csv_file = f'fgsm_features_{count}_e{i}.csv'
-                csv_path = os.path.join(folder_path, csv_file)
+            if i == 0:
+                csv_file = f'original_features_{count}_e0.csv'
+            else:
+                csv_file = f'fgsm_features_{count}_e{i}.csv'
+            csv_path = os.path.join(folder_path, csv_file)
+            
+            if os.path.exists(csv_path):
+                try:
+                    df = pd.read_csv(csv_path)
+                except Exception as e:
+                    print(f"Error reading {csv_path}: {e}")
+                    continue
                 
-                if os.path.exists(csv_path):
-                    try:
-                        df = pd.read_csv(csv_path)
-                    except Exception as e:
-                        print(f"Error reading {csv_path}: {e}")
-                        continue
-                    
-                    # Insert identifier columns if not present
-                    if 'image' not in df.columns:
-                        df.insert(0, 'image', folder)
-                    if 'epsilon' not in df.columns:
-                        df.insert(1, 'epsilon', f'e{i}')
-                    
-                    # Append the entire DataFrame for this epsilon and category
-                    global_data[category][f'e{i}'].append(df)
+                # Insert identifier columns if not present
+                if 'image' not in df.columns:
+                    df.insert(0, 'image', folder)
+                if 'epsilon' not in df.columns:
+                    df.insert(1, 'epsilon', f'e{i}')
+                
+                # Append the entire DataFrame for this epsilon and category
+                global_data[category][f'e{i}'].append(df)
     
     # Ensure output directory exists
     if not os.path.exists(output_dir):
@@ -85,4 +84,5 @@ def concat_all_labels(root_dir, output_dir):
 if __name__ == "__main__":
     root_directory = "fgsm_results"    # Root directory containing all label folders
     output_directory = "./all-concat"    # Output directory for merged CSV files
-    concat_all_labels(root_directory, output_directory)
+    for i in range(10):
+        concat_all_labels(root_directory, output_directory, i)
