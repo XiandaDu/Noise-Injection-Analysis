@@ -57,8 +57,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 # Define input and output base directories
-input_dir = "./fgsm_results"
-output_base_dir = "histogram"
+input_dir = "./all-concat"
+output_base_dir = "all-concat-histogram"
 os.makedirs(output_base_dir, exist_ok=True)
 
 # List of layers to process

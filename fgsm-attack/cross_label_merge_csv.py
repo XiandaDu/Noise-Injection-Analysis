@@ -9,6 +9,7 @@ def extract_number(folder_name):
 
 def concat_all_labels(root_dir, output_dir, i):
     # Global dictionary: category -> epsilon -> list of DataFrames
+    print("concat ", i)
     global_data = {
         'image': {f'e{i}': [] for i in range(10)},
         'by-depth': {f'e{i}': [] for i in range(10)}
