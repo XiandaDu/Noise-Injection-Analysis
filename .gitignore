@@ -4,6 +4,7 @@
 diff
 all-concat
 histogram
+by-diff-histogram
 *.zip
 
 
