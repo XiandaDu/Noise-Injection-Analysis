@@ -7,15 +7,10 @@ histogram
 by-diff-histogram
 *.zip
 
-
-# FGSM
-# e1, e3
 # create a new statistics using L1 and L2 distances, remember to average them. 
 # from one layer to another layer.
 
 # Gaussian Noise as well ↑
-
-# PGD attack
 
 # Concat statistics of pics together from multiple classes
 # Chi-Sqaure 
@@ -29,3 +24,36 @@ by-diff-histogram
 # match by accuracy? Not on a large scale so acc is not that meaningful
 
 # By diff histogram
+
+
+
+
+
+# e + a number means the epsilon in fgsm attack is (number) divided by 255 (e.g. e3 means the epsilon in fgsm attack is 3/255)
+# e ranges from 0-9, where 0 means original pic. No noise injected. 
+
+# files with by-depth means that we are extracting the feature maps by each layer(stage) by each channel. 
+# E.g. Layer_1 contains 4 channels, then those files with by-depth in their names will be something like this:
+# Layer_1_depth0
+# Layer_1_depth1
+# Layer_1_depth2
+# Layer_1_depth3
+
+# result structure is like:
+# 14 label -> each label contains 40 images dir and 40 image-by-depth dir
+#          -> each image{?} or image{?}-by-depth folder contains 1.feature maps from e0-e9; 2.prediction results; 3.pics from e0-e9; 4.statistics of each csv
+
+# feature maps of concat csv of each label from e0-e9
+# feature maps of fully concat csv from e0-e9
+# feature maps of diff between fully concat csv
+
+# statistics of each csv
+# statistics of concat csv of each label from e0-e9
+# statistics of fully concat csv from e0-e9
+
+# histogram of diff between fully concat csv
+# histogram of fully concat csv from e0-e9
+
+
+# general_statistics.csv, 
+# by-diff histogram
