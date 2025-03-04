@@ -31,6 +31,9 @@ class CustomImageFolder(datasets.ImageFolder):
 
         return selected_samples
 
+    def __len__(self):
+        return len(self.filtered_samples)
+
     def __getitem__(self, idx):
         path, label_name = self.filtered_samples[idx]  # Here, label_name is the class name
         sample = self.loader(path)
@@ -54,7 +57,7 @@ def main():
     ])
     
     # Only iterate over 10 images per class
-    dataset = CustomImageFolder(root=dataset_dir, transform=transform, samples_per_class=2)
+    dataset = CustomImageFolder(root=dataset_dir, transform=transform, samples_per_class=10)
     dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
 
     fgsm_attacks = []
@@ -65,7 +68,7 @@ def main():
                                         std=[0.229, 0.224, 0.225])
         fgsm_attacks.append(attacker)
 
-    gaussian_sigmas = [0.001 * i for i in range(0,10)]  
+    gaussian_sigmas = [0.2 * i for i in range(0,10)]  
 
     all_fgsm_losses = [[] for _ in range(10)]  
     all_gaussian_losses = [[] for _ in range(10)]  
@@ -102,7 +105,7 @@ def main():
 
     plt.subplot(1,2,2)
     plt.plot([0.1*i for i in range(0,10)], gauss_avg, marker='o')
-    plt.title("Gaussian Loss vs. sigma=0.001...0.01")
+    plt.title("Gaussian Loss vs. sigma=0.2...2")
     plt.xlabel("sigma")
     plt.ylabel("CE Loss")
     plt.tight_layout()
