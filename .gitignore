@@ -6,6 +6,7 @@ all-concat
 histogram
 by-diff-histogram
 *.zip
+2D-hist
 
 # create a new statistics using L1 and L2 distances, remember to average them. 
 # from one layer to another layer.

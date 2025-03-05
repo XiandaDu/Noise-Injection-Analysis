@@ -17,7 +17,7 @@ class CustomImageFolder(datasets.ImageFolder):
         self.filtered_samples = self._filter_samples()
 
     def _filter_samples(self):
-        """随机选择指定数量的样本。"""
+        """Randomly select the specified number of samples."""
         class_to_samples = {}
         for path, label in self.samples:
             class_name = self.classes[label]
@@ -42,7 +42,7 @@ class CustomImageFolder(datasets.ImageFolder):
         return sample, label_name
 
 class FeatureExtractor(nn.Module):
-    """从 ResNet18 中提取 layer1 和 layer4 的特征。"""
+    """Extract features from ResNet18's layer1 and layer4."""
     def __init__(self, original_model):
         super(FeatureExtractor, self).__init__()
         self.original_model = original_model
@@ -61,27 +61,25 @@ class FeatureExtractor(nn.Module):
         x3 = self.original_model.layer3(x2)
         # layer4
         x4 = self.original_model.layer4(x3)
-        return x1, x4   # 返回 layer1, layer4 即可
+        return x1, x4
 
 def gather_and_random_downsample(list_f1, list_f4):
     """
-    将多个 batch 的 (layer1, layer4) flatten 后合并，并通过随机下采样
-    使二者长度一致，再返回 (f1_sample, f4_sample)。
+    Flatten and merge multiple batches of (layer1, layer4),
+    then randomly downsample to equal length.
     """
-    # 拼接为大的一维数组
-    f1_array = np.concatenate(list_f1, axis=0)  # shape ~ (N_total, )
-    f4_array = np.concatenate(list_f4, axis=0)  # shape ~ (M_total, )
+    f1_array = np.concatenate(list_f1, axis=0)
+    f4_array = np.concatenate(list_f4, axis=0)
 
-    # (可选) 过滤掉 =0 的值
+    # Filter out zeros to avoid interference in visualization
     mask_f1 = (f1_array != 0)
     mask_f4 = (f4_array != 0)
     f1_nonzero = f1_array[mask_f1]
     f4_nonzero = f4_array[mask_f4]
 
-    # 随机下采样到相同长度
+    # Randomly downsample to the same length
     min_len = min(len(f1_nonzero), len(f4_nonzero))
     if min_len == 0:
-        # 如果全是 0，就返回空
         return np.array([]), np.array([])
     idx1 = np.random.choice(len(f1_nonzero), size=min_len, replace=False)
     idx4 = np.random.choice(len(f4_nonzero), size=min_len, replace=False)
@@ -106,7 +104,7 @@ def main():
     dataset = CustomImageFolder(root=dataset_dir, transform=transform, samples_per_class=SAMPLES)
     dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
 
-    # 准备若干 FGSM 攻击（这里 eps 从 0 到 0.5, 步长 0.5/9）
+    # Prepare FGSM attacks (eps = 0.5 * e / 255, e in [0..9])
     fgsm_attacks = []
     for e in range(10):
         attacker = torchattacks.FGSM(model, eps=0.5*e/255.0)
@@ -115,77 +113,88 @@ def main():
                                         std=[0.229, 0.224, 0.225])
         fgsm_attacks.append(attacker)
 
-    # 准备若干 Gaussian 噪声 sigma (0, 0.2, 0.4, ..., 1.8)
+    # Gaussian noise with sigma = 0.2*j, j in [0..9]
     gaussian_sigmas = [0.2 * i for i in range(10)]
-
-    # 这里我们选「最大 eps」和「最大 sigma」来对比，可自行改成别的
-    max_fgsm_attacker = fgsm_attacks[9]      # eps = 0.5*9 / 255
-    max_gaussian_sigma = gaussian_sigmas[9]  # 0.2*9 = 1.8
 
     feature_extractor = FeatureExtractor(model.to(device))
     feature_extractor.eval()
 
-    # 用来收集(Original, FGSM, Gaussian)的 layer1, layer4 特征
-    orig_layer1_list,  orig_layer4_list  = [], []
-    fgsm_layer1_list,  fgsm_layer4_list  = [], []
-    gauss_layer1_list, gauss_layer4_list = [], []
+    # Loop over 10 FGSM eps values and 10 Gaussian sigma values (100 combinations)
+    for i in range(5,10):
+        for j in range(5,10):
+            eps_val = 0.5 * i / 255.0
+            sigma_val = 0.2 * j
 
-    # 遍历数据集，每张图像分别获取: 原图、FGSM、高斯噪声图 的 (layer1, layer4)
-    for batch_images, batch_labels in dataloader:
-        batch_images = batch_images.to(device)
-        batch_labels = torch.tensor([int(lbl) for lbl in batch_labels], dtype=torch.long).to(device)
+            fgsm_attacker = fgsm_attacks[i]
+            gauss_sigma   = gaussian_sigmas[j]
 
-        with torch.no_grad():
-            f1_orig, f4_orig = feature_extractor(batch_images)
-        orig_layer1_list.append(f1_orig.view(-1).cpu().numpy())
-        orig_layer4_list.append(f4_orig.view(-1).cpu().numpy())
+            # Collect features from (Original, FGSM, Gaussian) for layer1 and layer4
+            orig_layer1_list, orig_layer4_list = [], []
+            fgsm_layer1_list, fgsm_layer4_list = [], []
+            gauss_layer1_list, gauss_layer4_list = [], []
 
-        # FGSM 对抗图 (最大 eps)
-        adv_images = max_fgsm_attacker(batch_images, batch_labels)
-        with torch.no_grad():
-            f1_fgsm, f4_fgsm = feature_extractor(adv_images)
-        fgsm_layer1_list.append(f1_fgsm.view(-1).cpu().numpy())
-        fgsm_layer4_list.append(f4_fgsm.view(-1).cpu().numpy())
+            # Process dataset, get features for original, FGSM, and Gaussian images
+            for batch_images, batch_labels in dataloader:
+                batch_images = batch_images.to(device)
+                batch_labels = torch.tensor([int(lbl) for lbl in batch_labels], dtype=torch.long).to(device)
 
-        # Gaussian 噪声图 (最大 sigma)
-        noise = torch.randn_like(batch_images) * max_gaussian_sigma
-        gauss_images = torch.clamp(batch_images + noise, -1000, 1000)
-        with torch.no_grad():
-            f1_gauss, f4_gauss = feature_extractor(gauss_images)
-        gauss_layer1_list.append(f1_gauss.view(-1).cpu().numpy())
-        gauss_layer4_list.append(f4_gauss.view(-1).cpu().numpy())
+                # Original features
+                with torch.no_grad():
+                    f1_orig, f4_orig = feature_extractor(batch_images)
+                orig_layer1_list.append(f1_orig.view(-1).cpu().numpy())
+                orig_layer4_list.append(f4_orig.view(-1).cpu().numpy())
 
-    # 下采样到相同长度，得到可以对应绘制的 (x, y)
-    orig_l1,  orig_l4  = gather_and_random_downsample(orig_layer1_list,  orig_layer4_list)
-    fgsm_l1,  fgsm_l4  = gather_and_random_downsample(fgsm_layer1_list,  fgsm_layer4_list)
-    gauss_l1, gauss_l4 = gather_and_random_downsample(gauss_layer1_list, gauss_layer4_list)
+                # FGSM adversarial images (current eps)
+                adv_images = fgsm_attacker(batch_images, batch_labels)
+                with torch.no_grad():
+                    f1_fgsm, f4_fgsm = feature_extractor(adv_images)
+                fgsm_layer1_list.append(f1_fgsm.view(-1).cpu().numpy())
+                fgsm_layer4_list.append(f4_fgsm.view(-1).cpu().numpy())
 
-    # 画图 (1×3)
-    fig, axs = plt.subplots(1, 3, figsize=(15, 5))
+                # Gaussian noise images (current sigma)
+                noise = torch.randn_like(batch_images) * gauss_sigma
+                gauss_images = batch_images + noise
+                with torch.no_grad():
+                    f1_gauss, f4_gauss = feature_extractor(gauss_images)
+                gauss_layer1_list.append(f1_gauss.view(-1).cpu().numpy())
+                gauss_layer4_list.append(f4_gauss.view(-1).cpu().numpy())
 
-    # Original
-    h1 = axs[0].hist2d(orig_l1, orig_l4, bins=50, range=[[0,3],[0,3]], cmap='viridis')
-    axs[0].set_title("Original (layer1 vs. layer4)")
-    axs[0].set_xlabel("Layer1 feature value")
-    axs[0].set_ylabel("Layer4 feature value")
-    fig.colorbar(h1[3], ax=axs[0])
+            # Randomly downsample to same length for plotting
+            orig_l1, orig_l4 = gather_and_random_downsample(orig_layer1_list, orig_layer4_list)
+            fgsm_l1, fgsm_l4 = gather_and_random_downsample(fgsm_layer1_list, fgsm_layer4_list)
+            gauss_l1, gauss_l4 = gather_and_random_downsample(gauss_layer1_list, gauss_layer4_list)
 
-    # FGSM
-    h2 = axs[1].hist2d(fgsm_l1, fgsm_l4, bins=50, range=[[0,3],[0,3]], cmap='viridis')
-    axs[1].set_title("FGSM (layer1 vs. layer4)")
-    axs[1].set_xlabel("Layer1 feature value")
-    axs[1].set_ylabel("Layer4 feature value")
-    fig.colorbar(h2[3], ax=axs[1])
+            # Plot 1x3 2D histograms
+            fig, axs = plt.subplots(1, 3, figsize=(15, 5))
+            fig.suptitle(f"FGSM eps={i/2:.1f}/255, Gaussian sigma={0.2*j:.1f}", fontsize=14)
 
-    # Gaussian
-    h3 = axs[2].hist2d(gauss_l1, gauss_l4, bins=50, range=[[0,3],[0,3]], cmap='viridis')
-    axs[2].set_title("Gaussian (layer1 vs. layer4)")
-    axs[2].set_xlabel("Layer1 feature value")
-    axs[2].set_ylabel("Layer4 feature value")
-    fig.colorbar(h3[3], ax=axs[2])
+            # Original
+            h1 = axs[0].hist2d(orig_l1, orig_l4, bins=50, range=[[0,3],[0,3]], cmap='viridis')
+            axs[0].set_title("Original (layer1 vs. layer4)")
+            axs[0].set_xlabel("Layer1 feature")
+            axs[0].set_ylabel("Layer4 feature")
+            fig.colorbar(h1[3], ax=axs[0])
 
-    plt.tight_layout()
-    plt.show()
+            # FGSM
+            h2 = axs[1].hist2d(fgsm_l1, fgsm_l4, bins=50, range=[[0,3],[0,3]], cmap='viridis')
+            axs[1].set_title("FGSM (layer1 vs. layer4)")
+            axs[1].set_xlabel("Layer1 feature")
+            axs[1].set_ylabel("Layer4 feature")
+            fig.colorbar(h2[3], ax=axs[1])
+
+            # Gaussian
+            h3 = axs[2].hist2d(gauss_l1, gauss_l4, bins=50, range=[[0,3],[0,3]], cmap='viridis')
+            axs[2].set_title("Gaussian (layer1 vs. layer4)")
+            axs[2].set_xlabel("Layer1 feature")
+            axs[2].set_ylabel("Layer4 feature")
+            fig.colorbar(h3[3], ax=axs[2])
+
+            plt.tight_layout()
+
+            # Save the image locally with names containing i and j
+            out_filename = f"./2D-hist/2Dhist_eps_{i/2:.1f}_sigma_{0.2*j:.1f}.png"
+            plt.savefig(out_filename, dpi=200)
+            plt.close(fig)  # Close current figure to avoid too many open figures
 
 if __name__ == "__main__":
     main()
