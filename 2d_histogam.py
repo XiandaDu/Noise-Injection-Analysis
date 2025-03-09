@@ -190,11 +190,39 @@ def main():
             fig.colorbar(h3[3], ax=axs[2])
 
             plt.tight_layout()
+            plt.subplots_adjust(bottom=0.2)
 
-            # Save the image locally with names containing i and j
+            if len(orig_l1) > 0 and len(orig_l4) > 0:
+                o1m, o1s, o1med = np.mean(orig_l1), np.std(orig_l1), np.median(orig_l1)
+                o4m, o4s, o4med = np.mean(orig_l4), np.std(orig_l4), np.median(orig_l4)
+            else:
+                o1m = o1s = o1med = o4m = o4s = o4med = 0
+
+            if len(fgsm_l1) > 0 and len(fgsm_l4) > 0:
+                f1m, f1s, f1med = np.mean(fgsm_l1), np.std(fgsm_l1), np.median(fgsm_l1)
+                f4m, f4s, f4med = np.mean(fgsm_l4), np.std(fgsm_l4), np.median(fgsm_l4)
+            else:
+                f1m = f1s = f1med = f4m = f4s = f4med = 0
+
+            if len(gauss_l1) > 0 and len(gauss_l4) > 0:
+                g1m, g1s, g1med = np.mean(gauss_l1), np.std(gauss_l1), np.median(gauss_l1)
+                g4m, g4s, g4med = np.mean(gauss_l4), np.std(gauss_l4), np.median(gauss_l4)
+            else:
+                g1m = g1s = g1med = g4m = g4s = g4med = 0
+
+            summary_text = (
+                f"Original Layer1 mean={o1m:.4f}, std={o1s:.4f}, median={o1med:.4f}; "
+                f"Layer4 mean={o4m:.4f}, std={o4s:.4f}, median={o4med:.4f}\n"
+                f"FGSM     Layer1 mean={f1m:.4f}, std={f1s:.4f}, median={f1med:.4f}; "
+                f"Layer4 mean={f4m:.4f}, std={f4s:.4f}, median={f4med:.4f}\n"
+                f"Gaussian Layer1 mean={g1m:.4f}, std={g1s:.4f}, median={g1med:.4f}; "
+                f"Layer4 mean={g4m:.4f}, std={g4s:.4f}, median={g4med:.4f}"
+            )
+            plt.figtext(0.5, 0, summary_text, ha='center', va='bottom', fontsize=11)
+
             out_filename = f"./2D-hist/2Dhist_eps_{i/2:.1f}_sigma_{0.2*j:.1f}.png"
             plt.savefig(out_filename, dpi=200)
-            plt.close(fig)  # Close current figure to avoid too many open figures
+            plt.close(fig)
 
 if __name__ == "__main__":
     main()
