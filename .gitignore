@@ -58,3 +58,9 @@ by-diff-histogram
 
 # general_statistics.csv, 
 # by-diff histogram
+
+
+
+# March 14
+# generate fgsm attack at different stages(especially intermediate stage). Try to attack them and let them have the same loss
+# compare the two attakcs
