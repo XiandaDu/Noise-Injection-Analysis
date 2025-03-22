@@ -30,7 +30,7 @@ class ResNet18_Modified(nn.Module):
 class FeatureExtractorModified(nn.Module):
     """Extract features from ResNet18's layer1 and layer4."""
     def __init__(self, original_model):
-        super(FeatureExtractor, self).__init__()
+        super(FeatureExtractorModified, self).__init__()
         self.original_model = original_model
 
     def forward(self, x):
@@ -117,6 +117,7 @@ def gather_and_random_downsample(list_f1, list_f4):
 
     return f1_sample, f4_sample
 
+
 def main():
     SAMPLES = 2
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -132,12 +133,11 @@ def main():
         transforms.ToTensor(),
         transforms.Normalize([0.485,0.456,0.406],[0.229,0.224,0.225])
     ])
-    
+
     dataset = CustomImageFolder(root=dataset_dir, transform=transform, samples_per_class=SAMPLES)
     dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
     criterion = nn.CrossEntropyLoss()
 
-    # Prepare FGSM attacks (eps = 0.5 * e / 255, e in [0..9])
     fgsm_attacks = []
     for e in range(10):
         attacker = torchattacks.FGSM(model, eps=0.5*e/255.0)
@@ -155,81 +155,81 @@ def main():
     for i in range(0,10):
         fgsm_attacker = fgsm_attacks[i]
 
-        # Collect features from (Original, FGSM, Gaussian) for layer1 and layer4
-        orig_layer1_list, orig_layer2_list = [], []
-        fgsm_layer1_list, fgsm_layer2_list = [], []
-        modified_layer2_list = []
+        fgsm_loss_list = []
+        eps_grid = np.arange(0, 10, 1)
+        layer2_loss_sum = {e: 0.0 for e in eps_grid}
+        layer2_loss_count = {e: 0 for e in eps_grid}
 
-        # Process dataset, get features for original, FGSM, and Gaussian images
         for batch_images, batch_labels in dataloader:
             batch_images = batch_images.to(device)
             batch_labels = torch.tensor([int(lbl) for lbl in batch_labels], dtype=torch.long).to(device)
 
-            # Original features
             with torch.no_grad():
-                f1_orig, f2_orig = feature_extractor(batch_images)
-            orig_layer1_list.append(f1_orig.view(-1).cpu().numpy())
-            orig_layer2_list.append(f2_orig.view(-1).cpu().numpy())
+                f1_orig, _ = feature_extractor(batch_images)
+            f1_orig.requires_grad = True
 
-            original_output = model(batch_images)
-            original_loss = criterion(original_output, batch_labels)
-            # print("orginal",original_loss)
-
-
-            # FGSM adversarial images (current eps)
             adv_images = fgsm_attacker(batch_images, batch_labels)
-            with torch.no_grad():
-                f1_fgsm, f2_fgsm = feature_extractor(adv_images)
-            fgsm_layer1_list.append(f1_fgsm.view(-1).cpu().numpy())
-            fgsm_layer2_list.append(f2_fgsm.view(-1).cpu().numpy())
-
             fgsm_output = model(adv_images)
             fgsm_loss = criterion(fgsm_output, batch_labels)
-            # print("fgsm",fgsm_loss)
-            
+            fgsm_loss_list.append(fgsm_loss.item())
 
-            # Modified adversarial images
-            for e in range(10):
-                attacker_modified = torchattacks.FGSM(model_modified, eps=(0.5*i+0.05*(e-5))/255.0)
-                attacker_modified.normalization_used = True
-                attacker_modified.set_normalization_used(mean=[0.485, 0.456, 0.406],
-                                                        std=[0.229, 0.224, 0.225])
-                modified_images = attacker_modified(f1_orig, batch_labels)
-                modified_output = model_modified(modified_images)
-                modified_loss = criterion(modified_output, batch_labels)
-                if(abs(modified_loss-fgsm_loss) < 1):
-                    break
+            fixed_input = f1_orig.detach()
+            fixed_input.requires_grad = False
 
-            with torch.no_grad():
-                f2_modified = feature_extractor_modified(modified_images)
-            modified_layer2_list.append(f2_modified.view(-1).cpu().numpy())
+            for e2 in eps_grid:
+                attacker_layer2 = torchattacks.FGSM(model_modified, eps=e2/255.0)
+                attacker_layer2.normalization_used = False
+                try:
+                    modified_layer2 = attacker_layer2(fixed_input, batch_labels)
+                    output_layer2 = model_modified(modified_layer2)
+                    loss_layer2 = criterion(output_layer2, batch_labels)
+                    layer2_loss_sum[e2] += loss_layer2.item()
+                    layer2_loss_count[e2] += 1
+                except:
+                    continue
 
-        # # Randomly downsample to same length for plotting
+        eps_list = []
+        loss_avg_list = []
+        for e in eps_grid:
+            if layer2_loss_count[e] > 0:
+                eps_list.append(e)
+                loss_avg_list.append(layer2_loss_sum[e] / layer2_loss_count[e])
+
+        fgsm_loss_avg = sum(fgsm_loss_list) / len(fgsm_loss_list)
+
+        plt.figure(figsize=(7,5))
+        plt.plot(eps_list, loss_avg_list, color='blue', label='Layer2 epsilon sweep (avg)')
+        plt.axhline(y=fgsm_loss_avg, color='red', linestyle='--', label=f'Layer1 FGSM loss={fgsm_loss_avg:.4f}')
+        plt.xlabel("Layer2 epsilon")
+        plt.ylabel("Cross Entropy Loss")
+        plt.title(f"Avg Loss Curve | Layer1 eps={0.5*i/255:.4f}")
+        plt.legend()
+        plt.grid(True)
+        plt.savefig(f"./2D-hist/loss_avg_curve_layer1eps_{0.5*i:.1f}.png", dpi=200)
+        plt.close()
+
+
         # orig_l1, orig_l4 = gather_and_random_downsample(orig_layer1_list, orig_layer2_list)
         # fgsm_l1, fgsm_l4 = gather_and_random_downsample(fgsm_layer1_list, fgsm_layer2_list)
-        # gauss_l1, gauss_l4 = gather_and_random_downsample(gauss_layer1_list, gauss_layer2_list)
+        # modified_l1, modified_l4 = gather_and_random_downsample(fgsm_layer1_list, modified_layer2_list)
 
-        # # Plot 1x3 2D histograms
         # fig, axs = plt.subplots(1, 3, figsize=(15, 5))
-        # fig.suptitle(f"FGSM eps={i/2:.1f}/255, Gaussian sigma={0.2*j:.1f}", fontsize=14)
+        # fig.suptitle(f"FGSM eps={i/2:.1f}/255, Modified epsilon", fontsize=14)
 
-        # # Original
         # h1 = axs[0].hist2d(orig_l1, orig_l4, bins=50, range=[[0,3],[0,3]], cmap='viridis')
         # axs[0].set_title("Original (layer1 vs. layer4)")
         # axs[0].set_xlabel("Layer1 feature")
         # axs[0].set_ylabel("Layer4 feature")
         # fig.colorbar(h1[3], ax=axs[0])
 
-        # # FGSM
         # h2 = axs[1].hist2d(fgsm_l1, fgsm_l4, bins=50, range=[[0,3],[0,3]], cmap='viridis')
         # axs[1].set_title("FGSM (layer1 vs. layer4)")
         # axs[1].set_xlabel("Layer1 feature")
         # axs[1].set_ylabel("Layer4 feature")
         # fig.colorbar(h2[3], ax=axs[1])
 
-        # # Gaussian
-        # h3 = axs[2].hist2d(gauss_l1, gauss_l4, bins=50, range=[[0,3],[0,3]], cmap='viridis')
-        # axs[2].set_title("Gaussian (layer1 vs. layer4)")
+        # h3 = axs[2].hist2d(modified_l1, modified_l4, bins=50, range=[[0,3],[0,3]], cmap='viridis')
+        # axs[2].set_title("Modified (layer1 vs. layer4)")
         # axs[2].set_xlabel("Layer1 feature")
         # axs[2].set_ylabel("Layer4 feature")
         # fig.colorbar(h3[3], ax=axs[2])
@@ -237,37 +237,11 @@ def main():
         # plt.tight_layout()
         # plt.subplots_adjust(bottom=0.2)
 
-        # if len(orig_l1) > 0 and len(orig_l4) > 0:
-        #     o1m, o1s, o1med = np.mean(orig_l1), np.std(orig_l1), np.median(orig_l1)
-        #     o4m, o4s, o4med = np.mean(orig_l4), np.std(orig_l4), np.median(orig_l4)
-        # else:
-        #     o1m = o1s = o1med = o4m = o4s = o4med = 0
-
-        # if len(fgsm_l1) > 0 and len(fgsm_l4) > 0:
-        #     f1m, f1s, f1med = np.mean(fgsm_l1), np.std(fgsm_l1), np.median(fgsm_l1)
-        #     f4m, f4s, f4med = np.mean(fgsm_l4), np.std(fgsm_l4), np.median(fgsm_l4)
-        # else:
-        #     f1m = f1s = f1med = f4m = f4s = f4med = 0
-
-        # if len(gauss_l1) > 0 and len(gauss_l4) > 0:
-        #     g1m, g1s, g1med = np.mean(gauss_l1), np.std(gauss_l1), np.median(gauss_l1)
-        #     g4m, g4s, g4med = np.mean(gauss_l4), np.std(gauss_l4), np.median(gauss_l4)
-        # else:
-        #     g1m = g1s = g1med = g4m = g4s = g4med = 0
-
-        # summary_text = (
-        #     f"Original Layer1 mean={o1m:.4f}, std={o1s:.4f}, median={o1med:.4f}; "
-        #     f"Layer4 mean={o4m:.4f}, std={o4s:.4f}, median={o4med:.4f}\n"
-        #     f"FGSM     Layer1 mean={f1m:.4f}, std={f1s:.4f}, median={f1med:.4f}; "
-        #     f"Layer4 mean={f4m:.4f}, std={f4s:.4f}, median={f4med:.4f}\n"
-        #     f"Gaussian Layer1 mean={g1m:.4f}, std={g1s:.4f}, median={g1med:.4f}; "
-        #     f"Layer4 mean={g4m:.4f}, std={g4s:.4f}, median={g4med:.4f}"
-        # )
-        # plt.figtext(0.5, 0, summary_text, ha='center', va='bottom', fontsize=11)
-
-        # out_filename = f"./2D-hist/2Dhist_eps_{i/2:.1f}_sigma_{0.2*j:.1f}.png"
+        # out_filename = f"./2D-hist/2Dhist_eps_{i/2:.1f}.png"
         # plt.savefig(out_filename, dpi=200)
         # plt.close(fig)
+
+
 
 if __name__ == "__main__":
     main()
