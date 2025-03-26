@@ -178,14 +178,17 @@ def main():
 
             for e2 in eps_grid:
                 attacker_layer2 = torchattacks.FGSM(model_modified, eps=e2/255.0)
-                attacker_layer2.normalization_used = False
+                attacker_layer2.normalization_used = True
+                attacker_layer2.set_normalization_used(mean=[0.485, 0.456, 0.406],
+                                                std=[0.229, 0.224, 0.225])
                 try:
                     modified_layer2 = attacker_layer2(fixed_input, batch_labels)
                     output_layer2 = model_modified(modified_layer2)
                     loss_layer2 = criterion(output_layer2, batch_labels)
                     layer2_loss_sum[e2] += loss_layer2.item()
                     layer2_loss_count[e2] += 1
-                except:
+                except Exception as e:
+                    print(f"An error occurred: {e}")
                     continue
 
         eps_list = []

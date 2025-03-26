@@ -120,8 +120,8 @@ def main():
     feature_extractor.eval()
 
     # Loop over 10 FGSM eps values and 10 Gaussian sigma values (100 combinations)
-    for i in range(5,10):
-        for j in range(5,10):
+    for i in range(0,10):
+        for j in range(0,10):
             eps_val = 0.5 * i / 255.0
             sigma_val = 0.2 * j
 
