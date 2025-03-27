@@ -117,6 +117,68 @@ def gather_and_random_downsample(list_f1, list_f4):
 
     return f1_sample, f4_sample
 
+from torchattacks.attack import Attack
+
+
+class FGSM(Attack):
+    r"""
+    FGSM in the paper 'Explaining and harnessing adversarial examples'
+    [https://arxiv.org/abs/1412.6572]
+
+    Distance Measure : Linf
+
+    Arguments:
+        model (nn.Module): model to attack.
+        eps (float): maximum perturbation. (Default: 8/255)
+
+    Shape:
+        - images: :math:`(N, C, H, W)` where `N = number of batches`, `C = number of channels`,        `H = height` and `W = width`. It must have a range [0, 1].
+        - labels: :math:`(N)` where each value :math:`y_i` is :math:`0 \leq y_i \leq` `number of labels`.
+        - output: :math:`(N, C, H, W)`.
+
+    Examples::
+        >>> attack = torchattacks.FGSM(model, eps=8/255)
+        >>> adv_images = attack(images, labels)
+
+    """
+
+    def __init__(self, model, eps=8 / 255):
+        super().__init__("FGSM", model)
+        self.eps = eps
+        self.supported_mode = ["default", "targeted"]
+
+    def forward(self, images, labels, max_mag):
+        r"""
+        Overridden.
+        """
+
+        images = images.clone().detach().to(self.device)
+        labels = labels.clone().detach().to(self.device)
+
+        if self.targeted:
+            target_labels = self.get_target_label(images, labels)
+
+        loss = nn.CrossEntropyLoss()
+
+        images.requires_grad = True
+        outputs = self.get_logits(images)
+
+        # Calculate loss
+        if self.targeted:
+            cost = -loss(outputs, target_labels)
+        else:
+            cost = loss(outputs, labels)
+
+        # Update adversarial images
+        grad = torch.autograd.grad(
+            cost, images, retain_graph=False, create_graph=False
+        )[0]
+
+        adv_images = images + self.eps * grad.sign()
+        adv_images = torch.clamp(adv_images, min=0, max=max_mag).detach()
+
+        return adv_images
+
 
 def main():
     SAMPLES = 2
@@ -141,7 +203,6 @@ def main():
     fgsm_attacks = []
     for e in range(10):
         attacker = torchattacks.FGSM(model, eps=0.5*e/255.0)
-        attacker.normalization_used = True
         attacker.set_normalization_used(mean=[0.485, 0.456, 0.406],
                                         std=[0.229, 0.224, 0.225])
         fgsm_attacks.append(attacker)
@@ -177,12 +238,10 @@ def main():
             fixed_input.requires_grad = False
 
             for e2 in eps_grid:
-                attacker_layer2 = torchattacks.FGSM(model_modified, eps=e2/255.0)
-                attacker_layer2.normalization_used = True
-                attacker_layer2.set_normalization_used(mean=[0.485, 0.456, 0.406],
-                                                std=[0.229, 0.224, 0.225])
+                attacker_layer2 = FGSM(model_modified, eps=e2/255.0)
                 try:
-                    modified_layer2 = attacker_layer2(fixed_input, batch_labels)
+                    max_mag = fixed_input.max()
+                    modified_layer2 = attacker_layer2.forward(fixed_input, batch_labels, max_mag)
                     output_layer2 = model_modified(modified_layer2)
                     loss_layer2 = criterion(output_layer2, batch_labels)
                     layer2_loss_sum[e2] += loss_layer2.item()
