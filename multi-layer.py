@@ -212,8 +212,9 @@ def main():
             # Attacked layer 1 feature maps
             adv_images = fgsm_attacker(batch_images, batch_labels)
             with torch.no_grad():
-                f1_adv, f1_adv = feature_extractor(adv_images)
+                f1_adv, f2_adv = feature_extractor(adv_images)
             list_f1.append(f1_adv.view(-1).cpu().numpy())
+            list_f2.append(f2_adv.view(-1).cpu().numpy())
 
             fgsm_output = model(adv_images)
             fgsm_loss = criterion(fgsm_output, batch_labels)
@@ -258,19 +259,20 @@ def main():
         target_loss = np.mean(fgsm_loss_array)
 
         closest_eps = min(eps_list, key=lambda e: abs((layer2_loss_sum[e]/layer2_loss_count[e]) - target_loss))
-        print(f"[INFO] Layer1 eps={0.5*i/255:.4f}, matched Layer2 eps={closest_eps/255.0:.4f}")
+        print(f"[INFO] Layer1 eps={0.5*i}/255, matched Layer2 eps={closest_eps}/255")
 
         fixed_input = f1_orig.detach()
         max_mag = fixed_input.max()
         attacker_layer2 = FGSM_MODIFIED(model_modified, eps=closest_eps/255.0)
         adv2 = attacker_layer2(fixed_input, batch_labels, max_mag)
         with torch.no_grad():
-            f2 = feature_extractor_modified(adv2)
-        f2_np = f2.view(-1).cpu().numpy()
-        list_f2.append(f2_np)
+            modified2 = feature_extractor_modified(adv2)
+        f2_np = modified2.view(-1).cpu().numpy()
+        list_modified2.append(f2_np)
 
         flat_orig1, flat_f1 = gather_and_random_downsample(list_orig1, list_f1)
         flat_orig2, flat_f2 = gather_and_random_downsample(list_orig2, list_f2)
+        list_modified2, _ = gather_and_random_downsample(list_modified2, list_modified2)
 
         if len(flat_orig1) > 0:
             plt.figure(figsize=(10, 6))
@@ -278,24 +280,25 @@ def main():
             plt.hist(flat_f1, bins=100, alpha=0.5, label=f"FGSM Layer1 eps={0.5*i}/255", density=True)
             plt.xlabel("Feature Value")
             plt.ylabel("Density")
-            plt.title(f"Feature Distribution | Layer1 Injection eps={0.5*i}/255 | Layer2 Injection eps={closest_eps}255")
+            plt.title(f"Feature Distribution | Layer1 Injection eps={0.5*i}/255")
             plt.legend()
             plt.grid(True)
             plt.tight_layout()
-            plt.savefig(f"./2D-hist/feature_hist_match_{i}.png", dpi=200)
+            plt.savefig(f"./2D-hist/L1_feature_hist_{i}.png", dpi=200)
             plt.close()
 
         if len(flat_orig2) > 0:
             plt.figure(figsize=(10, 6))
             plt.hist(flat_orig2, bins=100, alpha=0.5, label="Original Layer2", density=True)
-            plt.hist(flat_f2, bins=100, alpha=0.5, label=f"FGSM Layer2 eps={closest_eps}/255", density=True)
+            plt.hist(flat_f2, bins=100, alpha=0.5, label=f"Layer 1 FGSM @Layer2 eps={0.5*i}/255", density=True)
+            plt.hist(list_modified2, bins=100, alpha=0.5, label=f"Layer2 FGSM @ Layer2 eps={closest_eps}/255", density=True)
             plt.xlabel("Feature Value")
             plt.ylabel("Density")
-            plt.title(f"Feature Distribution | Layer2 eps={closest_eps}/255")
+            plt.title(f"Feature Distribution | L1 esp={0.5*i}/255 matched L2 eps={closest_eps}/255")
             plt.legend()
             plt.grid(True)
             plt.tight_layout()
-            plt.savefig(f"./2D-hist/feature_hist_layer2_{i}.png", dpi=200)
+            plt.savefig(f"./2D-hist/L2_feature_hist_{i}.png", dpi=200)
             plt.close()
 
 if __name__ == "__main__":
