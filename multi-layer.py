@@ -120,38 +120,13 @@ def gather_and_random_downsample(list_f1, list_f4):
 from torchattacks.attack import Attack
 
 
-class FGSM(Attack):
-    r"""
-    FGSM in the paper 'Explaining and harnessing adversarial examples'
-    [https://arxiv.org/abs/1412.6572]
-
-    Distance Measure : Linf
-
-    Arguments:
-        model (nn.Module): model to attack.
-        eps (float): maximum perturbation. (Default: 8/255)
-
-    Shape:
-        - images: :math:`(N, C, H, W)` where `N = number of batches`, `C = number of channels`,        `H = height` and `W = width`. It must have a range [0, 1].
-        - labels: :math:`(N)` where each value :math:`y_i` is :math:`0 \leq y_i \leq` `number of labels`.
-        - output: :math:`(N, C, H, W)`.
-
-    Examples::
-        >>> attack = torchattacks.FGSM(model, eps=8/255)
-        >>> adv_images = attack(images, labels)
-
-    """
-
+class FGSM_MODIFIED(Attack):
     def __init__(self, model, eps=8 / 255):
         super().__init__("FGSM", model)
         self.eps = eps
         self.supported_mode = ["default", "targeted"]
 
     def forward(self, images, labels, max_mag):
-        r"""
-        Overridden.
-        """
-
         images = images.clone().detach().to(self.device)
         labels = labels.clone().detach().to(self.device)
 
@@ -220,25 +195,34 @@ def main():
         eps_grid = np.arange(0, 10, 1)
         layer2_loss_sum = {e: 0.0 for e in eps_grid}
         layer2_loss_count = {e: 0 for e in eps_grid}
+        list_f1, list_f2, list_orig1, list_orig2, list_modified2 = [], [], [], [], []
 
         for batch_images, batch_labels in dataloader:
             batch_images = batch_images.to(device)
+            batch_images.requires_grad = True
             batch_labels = torch.tensor([int(lbl) for lbl in batch_labels], dtype=torch.long).to(device)
 
+            # Original layer 1 feature maps
             with torch.no_grad():
-                f1_orig, _ = feature_extractor(batch_images)
+                f1_orig, f2_orig = feature_extractor(batch_images)
+            list_orig1.append(f1_orig.view(-1).cpu().numpy())
+            list_orig2.append(f2_orig.view(-1).cpu().numpy())
             f1_orig.requires_grad = True
 
+            # Attacked layer 1 feature maps
             adv_images = fgsm_attacker(batch_images, batch_labels)
+            with torch.no_grad():
+                f1_adv, f1_adv = feature_extractor(adv_images)
+            list_f1.append(f1_adv.view(-1).cpu().numpy())
+
             fgsm_output = model(adv_images)
             fgsm_loss = criterion(fgsm_output, batch_labels)
             fgsm_loss_list.append(fgsm_loss.item())
 
             fixed_input = f1_orig.detach()
-            fixed_input.requires_grad = False
 
             for e2 in eps_grid:
-                attacker_layer2 = FGSM(model_modified, eps=e2/255.0)
+                attacker_layer2 = FGSM_MODIFIED(model_modified, eps=e2/255.0)
                 try:
                     max_mag = fixed_input.max()
                     modified_layer2 = attacker_layer2.forward(fixed_input, batch_labels, max_mag)
@@ -261,49 +245,58 @@ def main():
 
         plt.figure(figsize=(7,5))
         plt.plot(eps_list, loss_avg_list, color='blue', label='Layer2 epsilon sweep (avg)')
-        plt.axhline(y=fgsm_loss_avg, color='red', linestyle='--', label=f'Layer1 FGSM loss={fgsm_loss_avg:.4f}')
+        plt.axhline(y=fgsm_loss_avg, color='red', linestyle='--', label=f'Layer1 CE loss={fgsm_loss_avg:.4f}')
         plt.xlabel("Layer2 epsilon")
         plt.ylabel("Cross Entropy Loss")
-        plt.title(f"Avg Loss Curve | Layer1 eps={0.5*i/255:.4f}")
+        plt.title(f"Avg Loss Curve | Layer1 eps={0.5*i}/255")
         plt.legend()
         plt.grid(True)
         plt.savefig(f"./2D-hist/loss_avg_curve_layer1eps_{0.5*i:.1f}.png", dpi=200)
         plt.close()
 
+        fgsm_loss_array = np.array(fgsm_loss_list)
+        target_loss = np.mean(fgsm_loss_array)
 
-        # orig_l1, orig_l4 = gather_and_random_downsample(orig_layer1_list, orig_layer2_list)
-        # fgsm_l1, fgsm_l4 = gather_and_random_downsample(fgsm_layer1_list, fgsm_layer2_list)
-        # modified_l1, modified_l4 = gather_and_random_downsample(fgsm_layer1_list, modified_layer2_list)
+        closest_eps = min(eps_list, key=lambda e: abs((layer2_loss_sum[e]/layer2_loss_count[e]) - target_loss))
+        print(f"[INFO] Layer1 eps={0.5*i/255:.4f}, matched Layer2 eps={closest_eps/255.0:.4f}")
 
-        # fig, axs = plt.subplots(1, 3, figsize=(15, 5))
-        # fig.suptitle(f"FGSM eps={i/2:.1f}/255, Modified epsilon", fontsize=14)
+        fixed_input = f1_orig.detach()
+        max_mag = fixed_input.max()
+        attacker_layer2 = FGSM_MODIFIED(model_modified, eps=closest_eps/255.0)
+        adv2 = attacker_layer2(fixed_input, batch_labels, max_mag)
+        with torch.no_grad():
+            f2 = feature_extractor_modified(adv2)
+        f2_np = f2.view(-1).cpu().numpy()
+        list_f2.append(f2_np)
 
-        # h1 = axs[0].hist2d(orig_l1, orig_l4, bins=50, range=[[0,3],[0,3]], cmap='viridis')
-        # axs[0].set_title("Original (layer1 vs. layer4)")
-        # axs[0].set_xlabel("Layer1 feature")
-        # axs[0].set_ylabel("Layer4 feature")
-        # fig.colorbar(h1[3], ax=axs[0])
+        flat_orig1, flat_f1 = gather_and_random_downsample(list_orig1, list_f1)
+        flat_orig2, flat_f2 = gather_and_random_downsample(list_orig2, list_f2)
 
-        # h2 = axs[1].hist2d(fgsm_l1, fgsm_l4, bins=50, range=[[0,3],[0,3]], cmap='viridis')
-        # axs[1].set_title("FGSM (layer1 vs. layer4)")
-        # axs[1].set_xlabel("Layer1 feature")
-        # axs[1].set_ylabel("Layer4 feature")
-        # fig.colorbar(h2[3], ax=axs[1])
+        if len(flat_orig1) > 0:
+            plt.figure(figsize=(10, 6))
+            plt.hist(flat_orig1, bins=100, alpha=0.5, label="Original Layer1", density=True)
+            plt.hist(flat_f1, bins=100, alpha=0.5, label=f"FGSM Layer1 eps={0.5*i}/255", density=True)
+            plt.xlabel("Feature Value")
+            plt.ylabel("Density")
+            plt.title(f"Feature Distribution | Layer1 Injection eps={0.5*i}/255 | Layer2 Injection eps={closest_eps}255")
+            plt.legend()
+            plt.grid(True)
+            plt.tight_layout()
+            plt.savefig(f"./2D-hist/feature_hist_match_{i}.png", dpi=200)
+            plt.close()
 
-        # h3 = axs[2].hist2d(modified_l1, modified_l4, bins=50, range=[[0,3],[0,3]], cmap='viridis')
-        # axs[2].set_title("Modified (layer1 vs. layer4)")
-        # axs[2].set_xlabel("Layer1 feature")
-        # axs[2].set_ylabel("Layer4 feature")
-        # fig.colorbar(h3[3], ax=axs[2])
-
-        # plt.tight_layout()
-        # plt.subplots_adjust(bottom=0.2)
-
-        # out_filename = f"./2D-hist/2Dhist_eps_{i/2:.1f}.png"
-        # plt.savefig(out_filename, dpi=200)
-        # plt.close(fig)
-
-
+        if len(flat_orig2) > 0:
+            plt.figure(figsize=(10, 6))
+            plt.hist(flat_orig2, bins=100, alpha=0.5, label="Original Layer2", density=True)
+            plt.hist(flat_f2, bins=100, alpha=0.5, label=f"FGSM Layer2 eps={closest_eps}/255", density=True)
+            plt.xlabel("Feature Value")
+            plt.ylabel("Density")
+            plt.title(f"Feature Distribution | Layer2 eps={closest_eps}/255")
+            plt.legend()
+            plt.grid(True)
+            plt.tight_layout()
+            plt.savefig(f"./2D-hist/feature_hist_layer2_{i}.png", dpi=200)
+            plt.close()
 
 if __name__ == "__main__":
     main()
