@@ -95,25 +95,33 @@ class FeatureExtractor(nn.Module):
 def gather_and_random_downsample(list_f1, list_f4):
     """
     Flatten and merge multiple batches of (layer1, layer4),
-    then randomly downsample to equal length.
+    then randomly downsample to equal length, excluding the top 0.5% of non-zero values.
     """
     f1_array = np.concatenate(list_f1, axis=0)
     f4_array = np.concatenate(list_f4, axis=0)
 
-    # Filter out zeros to avoid interference in visualization
-    mask_f1 = (f1_array != 0)
-    mask_f4 = (f4_array != 0)
-    f1_nonzero = f1_array[mask_f1]
-    f4_nonzero = f4_array[mask_f4]
+    f1_nonzero = f1_array[f1_array != 0]
+    f4_nonzero = f4_array[f4_array != 0]
+
+    percentile_f1 = np.percentile(f1_nonzero, 99.5)
+    percentile_f4 = np.percentile(f4_nonzero, 99.5)
+
+    mask_f1 = (f1_array != 0) & (f1_array <= percentile_f1)
+    mask_f4 = (f4_array != 0) & (f4_array <= percentile_f4)
+
+    f1_filtered = f1_array[mask_f1]
+    f4_filtered = f4_array[mask_f4]
 
     # Randomly downsample to the same length
-    min_len = min(len(f1_nonzero), len(f4_nonzero))
+    min_len = min(len(f1_filtered), len(f4_filtered))
     if min_len == 0:
         return np.array([]), np.array([])
-    idx1 = np.random.choice(len(f1_nonzero), size=min_len, replace=False)
-    idx4 = np.random.choice(len(f4_nonzero), size=min_len, replace=False)
-    f1_sample = f1_nonzero[idx1]
-    f4_sample = f4_nonzero[idx4]
+
+    idx1 = np.random.choice(len(f1_filtered), size=min_len, replace=False)
+    idx4 = np.random.choice(len(f4_filtered), size=min_len, replace=False)
+    
+    f1_sample = f1_filtered[idx1]
+    f4_sample = f4_filtered[idx4]
 
     return f1_sample, f4_sample
 
@@ -156,7 +164,7 @@ class FGSM_MODIFIED(Attack):
 
 
 def main():
-    SAMPLES = 2
+    SAMPLES = 40
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = models.resnet18(pretrained=True).to(device)
     model.eval()
@@ -192,10 +200,14 @@ def main():
         fgsm_attacker = fgsm_attacks[i]
 
         fgsm_loss_list = []
-        eps_grid = np.arange(0, 10, 1)
+        eps_grid = np.arange(0, 15, 0.5)
         layer2_loss_sum = {e: 0.0 for e in eps_grid}
         layer2_loss_count = {e: 0 for e in eps_grid}
-        list_f1, list_f2, list_orig1, list_orig2, list_modified2 = [], [], [], [], []
+        list_f1, list_f2, list_orig1, list_orig2 = [], [], [], []
+
+        list_list_modified2 = {}
+        for e2 in eps_grid:
+            list_list_modified2[float(e2)] = []
 
         for batch_images, batch_labels in dataloader:
             batch_images = batch_images.to(device)
@@ -221,19 +233,24 @@ def main():
             fgsm_loss_list.append(fgsm_loss.item())
 
             fixed_input = f1_orig.detach()
-
+            
             for e2 in eps_grid:
                 attacker_layer2 = FGSM_MODIFIED(model_modified, eps=e2/255.0)
-                try:
-                    max_mag = fixed_input.max()
-                    modified_layer2 = attacker_layer2.forward(fixed_input, batch_labels, max_mag)
-                    output_layer2 = model_modified(modified_layer2)
-                    loss_layer2 = criterion(output_layer2, batch_labels)
-                    layer2_loss_sum[e2] += loss_layer2.item()
-                    layer2_loss_count[e2] += 1
-                except Exception as e:
-                    print(f"An error occurred: {e}")
-                    continue
+                # try:
+                max_mag = fixed_input.max()
+                modified_layer2 = attacker_layer2.forward(fixed_input, batch_labels, max_mag)
+                output_layer2 = model_modified(modified_layer2)
+                with torch.no_grad():
+                    modified2 = feature_extractor_modified(modified_layer2)
+                loss_layer2 = criterion(output_layer2, batch_labels)
+                layer2_loss_sum[e2] += loss_layer2.item()
+                layer2_loss_count[e2] += 1
+                
+                f2_np = modified2.view(-1).cpu().numpy()
+                list_list_modified2[float(e2)].append(f2_np)
+                # except Exception as e:
+                #     print(f"An error occurred: {e}")
+                #     continue
 
         eps_list = []
         loss_avg_list = []
@@ -261,15 +278,7 @@ def main():
         closest_eps = min(eps_list, key=lambda e: abs((layer2_loss_sum[e]/layer2_loss_count[e]) - target_loss))
         print(f"[INFO] Layer1 eps={0.5*i}/255, matched Layer2 eps={closest_eps}/255")
 
-        fixed_input = f1_orig.detach()
-        max_mag = fixed_input.max()
-        attacker_layer2 = FGSM_MODIFIED(model_modified, eps=closest_eps/255.0)
-        adv2 = attacker_layer2(fixed_input, batch_labels, max_mag)
-        with torch.no_grad():
-            modified2 = feature_extractor_modified(adv2)
-        f2_np = modified2.view(-1).cpu().numpy()
-        list_modified2.append(f2_np)
-
+        list_modified2 = list_list_modified2[closest_eps]
         flat_orig1, flat_f1 = gather_and_random_downsample(list_orig1, list_f1)
         flat_orig2, flat_f2 = gather_and_random_downsample(list_orig2, list_f2)
         list_modified2, _ = gather_and_random_downsample(list_modified2, list_modified2)
