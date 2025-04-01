@@ -269,7 +269,7 @@ def main():
         plt.title(f"Avg Loss Curve | Layer1 eps={0.5*i}/255")
         plt.legend()
         plt.grid(True)
-        plt.savefig(f"./2D-hist/loss_avg_curve_layer1eps_{0.5*i:.1f}.png", dpi=200)
+        plt.savefig(f"./2D-hist/L2_loss_avg_curve_layer1eps_{0.5*i:.1f}.png", dpi=200)
         plt.close()
 
         fgsm_loss_array = np.array(fgsm_loss_list)
