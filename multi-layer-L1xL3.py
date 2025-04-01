@@ -144,7 +144,7 @@ class FGSM_MODIFIED(Attack):
         return adv_images
 
 def main():
-    SAMPLES = 2
+    SAMPLES = 40
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = models.resnet18(pretrained=True).to(device)
     model.eval()
